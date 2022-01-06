@@ -1,0 +1,91 @@
+package newrelic
+
+import (
+	"context"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/newrelic/newrelic-client-go/pkg/cloud"
+	"strconv"
+)
+
+func resourceNewRelicGcpLinkAccount() *schema.Resource {
+	return &schema.Resource{
+		CreateContext: resourceNewRelicGcpLinkAccountCreate,
+		ReadContext:   resourceNewRelicGcpLinkAccountRead,
+		UpdateContext: resourceNewRelicGcpLinkAccountUpdate,
+		DeleteContext: resourceNewRelicGcpLinkAccountDelete,
+		Schema: map[string]*schema.Schema{
+			"gcp": {
+				Type:        schema.TypeSet,
+				Description: "cloud name",
+				ForceNew:    false,
+				Required:    true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"name": {
+							Type:        schema.TypeString,
+							Description: "name of the aaccount",
+							ForceNew:    true,
+							Required:    true,
+						},
+						"project_id": {
+							Type:        schema.TypeString,
+							Description: "project id",
+							ForceNew:    true,
+							Required:    true,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+func resourceNewRelicGcpLinkAccountCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	providerConfig := meta.(*ProviderConfig)
+	client := providerConfig.NewClient
+	accountID := selectAccountID(providerConfig, d)
+	linkAZureAccountInput, _ := expandCloudLinkAccountInput(d)
+	payload, err := client.Cloud.CloudLinkAccountWithContext(ctx, accountID, *linkAZureAccountInput)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	payloadReturned := &payload.LinkedAccounts[0]
+	id := payloadReturned.ID
+	d.SetId(string(rune(id)))
+	return nil
+}
+func expandGcpAccountsInput(cfg []interface{}) []cloud.CloudGcpLinkAccountInput {
+	var gcpAccounts []cloud.CloudGcpLinkAccountInput
+	gcpAccounts = make([]cloud.CloudGcpLinkAccountInput, 0, len(cfg))
+	for _, a := range cfg {
+		cfgGcpAccounts := a.(map[string]interface{})
+		gcpAccount := cloud.CloudGcpLinkAccountInput{}
+		if name, ok := cfgGcpAccounts["name"]; ok {
+			gcpAccount.Name = name.(string)
+		}
+		if projectid, ok := cfgGcpAccounts["project_id"]; ok {
+			gcpAccount.ProjectId = projectid.(string)
+		}
+		gcpAccounts = append(gcpAccounts, gcpAccount)
+	}
+	return gcpAccounts
+}
+func resourceNewRelicGcpLinkAccountRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	return nil
+}
+func resourceNewRelicGcpLinkAccountUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	return nil
+}
+func resourceNewRelicGcpLinkAccountDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	providerConfig := meta.(*ProviderConfig)
+	client := providerConfig.NewClient
+	accountID := selectAccountID(providerConfig, d)
+	var input []cloud.CloudUnlinkAccountsInput
+	id := d.Id()
+	input[0].LinkedAccountId, _ = strconv.Atoi(id)
+	_, err := client.Cloud.CloudUnlinkAccountWithContext(ctx, accountID, input)
+	if err != nil {
+		diag.FromErr(err)
+	}
+	return nil
+}
